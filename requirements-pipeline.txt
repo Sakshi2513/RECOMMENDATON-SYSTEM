@@ -1,0 +1,3 @@
+-r requirements.txt
+# only for pipeline/experiments/semantic_search.py
+sentence-transformers==5.7.0

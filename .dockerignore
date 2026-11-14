@@ -1,0 +1,14 @@
+# secrets and local data: never commit these
+.env
+.streamlit/secrets.toml
+data_store/
+*.db
+# build output and caches
+__pycache__/
+*.pyc
+.pytest_cache/
+_built/
+.git
+.github
+tests
+docs

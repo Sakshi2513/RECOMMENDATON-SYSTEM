@@ -1,0 +1,332 @@
+<title>Repair Recommendation System</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: single reading column, status strip on top, one visual per section. */
+:root{
+  --bg:#f6f7f8; --surface:#ffffff; --fg:#1b2428; --muted:#5d6b72; --line:#dde3e6;
+  --accent:#0b6e7f; --accent-soft:#d8eef1; --done:#2f7d4f; --todo:#9aa6ac; --warn:#b4571b;
+  --bar:#0b6e7f; --bar2:#8fbcc4; --font:"Inter",system-ui,sans-serif; --head:"Space Grotesk","Inter",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12181b; --surface:#192125; --fg:#e6ecee; --muted:#93a2a9; --line:#2a353a;
+  --accent:#4fb6c7; --accent-soft:#1d3a41; --done:#5fc088; --todo:#6b7a81; --warn:#e08a52; --bar:#4fb6c7; --bar2:#2f6772; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12181b; --surface:#192125; --fg:#e6ecee; --muted:#93a2a9; --line:#2a353a;
+  --accent:#4fb6c7; --accent-soft:#1d3a41; --done:#5fc088; --todo:#6b7a81; --warn:#e08a52; --bar:#4fb6c7; --bar2:#2f6772; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 var(--font);padding-block:32px 56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:860px;margin:0 auto;display:grid;gap:28px}
+h1,h2,h3{font-family:var(--head);text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:30px} h2{font-size:20px;margin-bottom:10px} h3{font-size:15px}
+p{margin:0 0 10px;max-width:68ch} .muted{color:var(--muted)}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px;min-width:0}
+.top{display:grid;gap:6px}
+.stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:6px}
+.st{border:1px solid var(--line);border-radius:4px;padding:10px;background:var(--bg);min-width:0}
+.st b{display:block;font-family:var(--head);font-size:13px}
+.st span{font-size:12px;color:var(--muted)}
+.st.done{border-color:var(--done)} .st.done em{color:var(--done)} .st.todo em{color:var(--todo)}
+.st em{font-style:normal;font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.bars{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:minmax(110px,190px) 1fr;gap:12px;align-items:center}
+.row .t{font-size:13px} .track{background:var(--bg);border-radius:3px;position:relative;height:26px;min-width:0}
+.fill{height:100%;border-radius:3px;background:var(--bar);display:flex;align-items:center;justify-content:flex-end;
+  padding-right:8px;color:#fff;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fill.b{background:var(--bar2);color:var(--fg)}
+.fill.out{overflow:visible;justify-content:flex-start}
+.fill.out span{position:absolute;left:calc(100% + 6px);color:var(--fg)}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.scroll{overflow-x:auto}
+code{font:12.5px ui-monospace,Consolas,monospace;background:var(--bg);padding:1px 5px;border-radius:3px}
+pre{background:var(--bg);padding:12px;border-radius:4px;overflow-x:auto;font:12px/1.5 ui-monospace,Consolas,monospace;margin:8px 0 0}
+pre.mermaid{background:transparent;text-align:center}
+.split{display:flex;height:28px;border-radius:3px;overflow:hidden;margin:6px 0}
+.split div{display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;min-width:0}
+ul{margin:0;padding-left:18px} li{margin-bottom:5px}
+.issue{color:var(--warn);font-weight:600}
+</style>
+
+<main>
+<div class="top">
+  <div class="label">Technical reference · updated after Stage 1</div>
+  <h1>Repair Recommendation System</h1>
+  <p class="muted">Input: the negative-side and positive-side description of an impacted area. Output: recommended repair steps, with similar past cases shown beside them. Text only; images are not used.</p>
+  <div class="stages">
+    <div class="st done"><em>Done</em><b>1 · Dataset</b><span>clean, dedupe, split</span></div>
+    <div class="st done"><em>Done</em><b>2 · Keyword search</b><span>BM25 baseline measured</span></div>
+    <div class="st done"><em>Done</em><b>3 · Semantic search</b><span>no clear gain over BM25</span></div>
+    <div class="st done"><em>Done</em><b>4 · Action classifier</b><span>macro F1 0.55</span></div>
+    <div class="st todo"><em>Optional</em><b>5 · Generation</b><span>retrieval + LLM</span></div>
+    <div class="st done"><em>Built</em><b>6 · Streamlit app</b><span>not yet used by surveyors</span></div>
+  </div>
+</div>
+
+<section>
+  <h2>How the system fits together</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph OFF["Built once, offline"]
+    A["6,226 inspection folders<br/>raw_text.txt + inspection.json"] --> B["Parse, clean,<br/>deduplicate"]
+    B --> C["train / val / test<br/>.jsonl"]
+    C --> D["Search index<br/>and models"]
+  end
+  subgraph ON["Every request, in Streamlit"]
+    E["Negative + positive<br/>description"] --> F["Same cleaning"]
+    F --> G["Find similar cases,<br/>predict actions"]
+    G --> H["Repair steps +<br/>similar past cases"]
+  end
+  D --> G
+  H -. "accept / edit" .-> C
+  </pre>
+  <p class="muted">The dotted line is the correction loop: surveyor edits are logged and used to retrain.</p>
+</section>
+
+<section>
+  <h2>Stage 1: how the dataset was built</h2>
+  <p>Scripts live in <code>D:\INSPECTION DATASET\_built\scripts</code>. Each prints rows in, rows out and rows dropped.</p>
+  <div class="scroll"><table>
+    <tr><th>Step</th><th>What it does</th><th>Result</th></tr>
+    <tr><td>1 Collect</td><td>Reads every <code>raw_text.txt</code>; drops repeat PDFs by SHA-256</td><td>6,226 folders → 6,180 reports</td></tr>
+    <tr><td>2 Parse</td><td>Splits on <code>Impacted Area N</code>; reads the negative and positive blocks until the photo list</td><td>16,896 areas</td></tr>
+    <tr><td>3 Merge</td><td>JSON gives checklist and property fields; raw text gives full wording (JSON text is often cut off). The JSON label marks where the observation ends and the recommendation starts</td><td>raw and JSON negative text differ in 7,637 areas</td></tr>
+    <tr><td>4 Action split</td><td>Recommendation = text after the label; leading words such as "Need to do", "Solution:", "Treatment" are removed</td><td>10,112 areas have one</td></tr>
+    <tr><td>5 Clean</td><td>Lowercase; mask <code>&lt;flat&gt; &lt;room&gt; &lt;floor&gt;</code>; remove phones, emails, footers; fix 97 typos found in the data</td><td>no personal data in outputs</td></tr>
+    <tr><td>6 Deduplicate</td><td>Exact pairs, then TF-IDF cosine ≥ 0.95</td><td>−97 exact, −251 near</td></tr>
+    <tr><td>7 Split</td><td>By inspection id, hash-based 80/10/10</td><td>0 reports in two splits</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>What came out</h2>
+  <div class="label">Areas at each step</div>
+  <div class="bars" style="margin:8px 0 18px">
+    <div class="row"><div class="t">Areas parsed</div><div class="track"><div class="fill" style="width:100%">16,896</div></div></div>
+    <div class="row"><div class="t">With recommendation</div><div class="track"><div class="fill" style="width:59.8%">10,112</div></div></div>
+    <div class="row"><div class="t">After dedupe (labelled)</div><div class="track"><div class="fill" style="width:57.8%">9,764</div></div></div>
+    <div class="row"><div class="t">Without recommendation</div><div class="track"><div class="fill b" style="width:38%">6,425</div></div></div>
+  </div>
+  <div class="label">Labelled rows by split</div>
+  <div class="split"><div style="width:80.8%;background:var(--bar)">train 7,893</div><div style="width:9.2%;background:var(--bar2);color:var(--fg)">901</div><div style="width:10%;background:var(--accent-soft);color:var(--fg)">970</div></div>
+  <p class="muted" style="font-size:13px">Train 3,583 reports · validation 419 (901 rows) · test 410 (970 rows). Unlabelled areas stay in <code>unlabelled.jsonl</code> and are used later as extra search cases.</p>
+  <div class="label" style="margin-top:14px">Files in <code>_built/</code></div>
+  <pre>train.jsonl  val.jsonl  test.jsonl  unlabelled.jsonl
+manifest.csv   typo_map.json   clean_report.json
+review_100_action_split.csv   test_check_200.csv</pre>
+  <p style="margin-top:12px">Each row:</p>
+  <pre>{"id","inspection_id","inspection_date","negative","positive",
+ "recommendation","checklist_type","property_type","split",
+ "rec_has_action_word"}</pre>
+</section>
+
+<section>
+  <h2>Known problems in the data</h2>
+  <div class="scroll"><table>
+    <tr><th>Issue</th><th>Size</th><th>Plan</th></tr>
+    <tr><td class="issue">Recommendation is really an observation (starts with "observed")</td><td>1,284 rows</td><td>Hand-review <code>review_100_action_split.csv</code>, then add a filter or relabel</td></tr>
+    <tr><td class="issue">No action word in the recommendation</td><td>839 rows</td><td>Flag column kept; check in the same review</td></tr>
+    <tr><td class="issue">Same input, different recommendations</td><td>186 inputs</td><td>Review; keep as-is for retrieval</td></tr>
+    <tr><td class="issue">Cross-references such as "refer impacted area 2"</td><td>not counted yet</td><td>Resolve or drop in Stage 2 prep</td></tr>
+    <tr><td>Very long recommendations</td><td>median 180 chars, longest 6,206</td><td>Truncate or split into steps for display</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Stage 2: keyword search baseline</h2>
+  <p>For each test area, the system searches the 7,893 training cases by negative + positive text and returns the top matches with their recommendations. Script: <code>s3_keyword_search.py</code>; full numbers in <code>stage2_report.json</code>.</p>
+  <p><b>What counts as a hit.</b> No two recommendations are worded the same, so a hit means a returned recommendation is close to the true one: <i>text hit</i> = TF-IDF cosine ≥ 0.5; <i>tag hit</i> = same repair-action tags (grouting, coating, plumbing, and so on). The tag metric is coarse: picking random cases already scores 62% at top-5, so read it with that in mind.</p>
+  <div class="label">Hit rate on the test set (970 areas), BM25 on negative + 2× positive text</div>
+  <div class="bars" style="margin:8px 0 14px">
+    <div class="row"><div class="t">Text hit @1</div><div class="track"><div class="fill" style="width:23.1%">23.1%</div></div></div>
+    <div class="row"><div class="t">Text hit @5</div><div class="track"><div class="fill" style="width:44.1%">44.1%</div></div></div>
+    <div class="row"><div class="t">Text hit @10</div><div class="track"><div class="fill" style="width:52.6%">52.6%</div></div></div>
+    <div class="row"><div class="t">Random, text hit @5</div><div class="track"><div class="fill b out" style="width:3%"><span>3.0% (validation)</span></div></div></div>
+    <div class="row"><div class="t">Tag hit @5</div><div class="track"><div class="fill" style="width:85.2%">85.2%</div></div></div>
+    <div class="row"><div class="t">Random, tag hit @5</div><div class="track"><div class="fill b" style="width:61.7%">61.7%</div></div></div>
+  </div>
+  <div class="scroll"><table>
+    <tr><th>Query text (validation, top-5)</th><th>TF-IDF text / tag</th><th>BM25 text / tag</th></tr>
+    <tr><td>negative + positive</td><td>38.8% / 81.9%</td><td>40.3% / 84.2%</td></tr>
+    <tr><td>negative + 2× positive (chosen)</td><td>42.3% / 81.5%</td><td>42.1% / 84.9%</td></tr>
+    <tr><td>positive only</td><td>37.6% / 79.4%</td><td>37.5% / 82.1%</td></tr>
+    <tr><td>negative only</td><td>29.2% / 78.4%</td><td>31.0% / 78.7%</td></tr>
+  </table></div>
+  <ul style="margin-top:10px">
+    <li>The positive side (the cause) carries more signal than the negative side (the symptom).</li>
+    <li>BM25 is slightly better than TF-IDF. The variant was picked on validation; the test set was scored once.</li>
+    <li>By property type, text hit @5: flat 46.7% (644 areas), house/bungalow 42.7% (234), commercial 32.1% (78).</li>
+    <li>This is the number stage 3 (semantic search) has to beat.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Stage 3: semantic search</h2>
+  <p>Tested whether matching by meaning beats matching by words. Two embedding models (MiniLM, BGE-small), exact cosine search (FAISS is not installed; at 7,893 cases a matrix product gives the same result), a hybrid of embeddings and BM25, and a cross-encoder reranker of the top 20. Script: <code>s4_semantic_search.py</code>; numbers in <code>stage3_report.json</code>.</p>
+  <div class="label">Validation, text hit @5 (higher is better)</div>
+  <div class="bars" style="margin:8px 0 14px">
+    <div class="row"><div class="t">BM25 (stage 2)</div><div class="track"><div class="fill b" style="width:42.1%">42.1%</div></div></div>
+    <div class="row"><div class="t">Dense MiniLM</div><div class="track"><div class="fill b" style="width:36.3%">36.3%</div></div></div>
+    <div class="row"><div class="t">Dense BGE-small</div><div class="track"><div class="fill b" style="width:37.5%">37.5%</div></div></div>
+    <div class="row"><div class="t">Hybrid BGE + BM25 (chosen)</div><div class="track"><div class="fill" style="width:42%">42.0%</div></div></div>
+    <div class="row"><div class="t">Hybrid + reranker</div><div class="track"><div class="fill b" style="width:38%">38.0%</div></div></div>
+  </div>
+  <div class="scroll"><table>
+    <tr><th>Test set (970 areas)</th><th>Text hit @1</th><th>@5</th><th>@10</th><th>Tag hit @5</th></tr>
+    <tr><td>BM25 (stage 2)</td><td>23.1%</td><td>44.1%</td><td>52.6%</td><td>85.2%</td></tr>
+    <tr><td>Hybrid BGE + BM25</td><td>24.9%</td><td>44.6%</td><td>52.1%</td><td>83.8%</td></tr>
+  </table></div>
+  <ul style="margin-top:10px">
+    <li><b>Result: no clear gain.</b> The hybrid is within about 2 points of BM25 on every measure and worse on some, which is inside the noise for 970 areas. The stage 3 gate (beat stage 2) is not met.</li>
+    <li>Embeddings alone are worse than BM25. The reranker, which was not trained on this data, made results worse on validation, so it was not used.</li>
+    <li>Likely cause: the wording is already short and technical, so shared words are a strong signal, and the labels are noisy (observations mixed into recommendations).</li>
+    <li>Decision: keep BM25 for retrieval and spend effort on label quality and on the action classifier (stage 4) instead.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Label repair (between stages 3 and 4)</h2>
+  <p>Many recommendations mixed what was observed with what to do. <code>s5_fix_labels.py</code> keeps only the action clauses and writes the result to <code>_built/v2/</code>. Version 1 is untouched.</p>
+  <pre class="mermaid">
+flowchart LR
+  A["Recommendation text"] --> B["Split into clauses"]
+  B --> C{"Junk?<br/>photo list, refer to, non-English"}
+  C -- yes --> X["drop clause"]
+  C -- no --> D{"Observation only?<br/>no action wording"}
+  D -- yes --> X
+  D -- no --> E["keep clause"]
+  E --> F{"Any clause left?"}
+  F -- yes --> G["labelled row"]
+  F -- no --> H["moved to unlabelled"]
+  </pre>
+  <div class="scroll"><table>
+    <tr><th></th><th>Before (v1)</th><th>After (v2)</th></tr>
+    <tr><td>Labelled rows</td><td>9,764</td><td>8,136 (train 6,579 · val 744 · test 813)</td></tr>
+    <tr><td>Moved to unlabelled (no action found)</td><td>-</td><td>1,611</td></tr>
+    <tr><td>Rows shortened by 10% or more</td><td>-</td><td>5,459</td></tr>
+    <tr><td>Median recommendation length</td><td>180 chars</td><td>116 chars</td></tr>
+    <tr><td>Recommendations starting with "observed"</td><td>1,284</td><td>394</td></tr>
+    <tr><td>BM25 text hit @5 on test</td><td>44.1%</td><td>42.9% (random: 3.8%)</td></tr>
+  </table></div>
+  <p class="muted" style="margin-top:10px;font-size:13px">The hit rate did not rise. The test set is different (813 rows, shorter targets), so the two numbers are not a like-for-like comparison, and the proxy measures wording overlap, not whether a repair is right. This is a rule-based filter and makes mistakes, such as dropping an action it does not recognise. <code>label_fix_samples.csv</code> has 100 before/after pairs to mark correct or wrong by hand.</p>
+</section>
+
+<section>
+  <h2>Stage 4: repair-action classifier</h2>
+  <p>Predicts which repair actions apply to an area, so the output can be a checklist of actions filled into templates. Script: <code>s7_action_classifier.py</code>; numbers in <code>stage4_report.json</code>. Uses the v2 labels.</p>
+  <p><b>How the targets were made.</b> 15 candidate actions were defined by keyword rules on the recommendation text (for example "grout" for tile joint grouting). Three had too few examples (brick bat coba, injection, fillet) and were dropped, leaving 12. Because the targets come from keyword rules, scores show how well the model predicts those rules, not what a surveyor would choose.</p>
+  <div class="label">Test F1 per action, logistic regression on TF-IDF (813 areas)</div>
+  <div class="bars" style="margin:8px 0 14px">
+    <div class="row"><div class="t">Plumbing repair</div><div class="track"><div class="fill" style="width:70.3%">0.70</div></div></div>
+    <div class="row"><div class="t">Tile joint grouting</div><div class="track"><div class="fill" style="width:70.2%">0.70</div></div></div>
+    <div class="row"><div class="t">Epoxy grouting</div><div class="track"><div class="fill" style="width:66.1%">0.66</div></div></div>
+    <div class="row"><div class="t">Chemical coating</div><div class="track"><div class="fill" style="width:60.9%">0.61</div></div></div>
+    <div class="row"><div class="t">Inspection / check</div><div class="track"><div class="fill" style="width:60.7%">0.61</div></div></div>
+    <div class="row"><div class="t">Floor breaking</div><div class="track"><div class="fill" style="width:58.9%">0.59</div></div></div>
+    <div class="row"><div class="t">Crack filling</div><div class="track"><div class="fill" style="width:55.4%">0.55</div></div></div>
+    <div class="row"><div class="t">Outlet patch</div><div class="track"><div class="fill" style="width:51.3%">0.51</div></div></div>
+    <div class="row"><div class="t">Retiling</div><div class="track"><div class="fill" style="width:48.6%">0.49</div></div></div>
+    <div class="row"><div class="t">Plaster repair</div><div class="track"><div class="fill" style="width:46.5%">0.47</div></div></div>
+    <div class="row"><div class="t">Sealant</div><div class="track"><div class="fill b" style="width:36%">0.36</div></div></div>
+    <div class="row"><div class="t">Painting</div><div class="track"><div class="fill b" style="width:29.7%">0.30</div></div></div>
+  </div>
+  <div class="scroll"><table>
+    <tr><th>Model (thresholds tuned on validation)</th><th>Val macro F1</th><th>Test macro F1</th><th>Test micro F1</th></tr>
+    <tr><td>TF-IDF + logistic regression (chosen)</td><td>0.549</td><td>0.546</td><td>0.604</td></tr>
+    <tr><td>TF-IDF + MiniLM embeddings</td><td>0.545</td><td>0.551</td><td>0.601</td></tr>
+    <tr><td>MiniLM embeddings only</td><td>0.509</td><td>0.525</td><td>0.571</td></tr>
+    <tr><td>Vote of the 5 BM25 neighbours (stage 2)</td><td>0.511</td><td>0.514</td><td>0.576</td></tr>
+  </table></div>
+  <ul style="margin-top:10px">
+    <li>The classifier beats the neighbour vote by about 3 F1 points. That is a small gain, and the combined model is level with it.</li>
+    <li>Plumbing and grouting are predicted best. Sealant (recall 26%) and painting (F1 0.30) are weak: they are rarer and the symptom text says little about them.</li>
+    <li>Only 15% of areas get the exact right set of actions; the model predicts 3.3 actions per area against 2.7 true. It works as a suggestion list for a surveyor, not as a final answer.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Stage 6: the Streamlit app</h2>
+  <p>Files in <code>_built/app/</code>: <code>app.py</code>, <code>model.joblib</code> (built by <code>s8_build_app_model.py</code>) and <code>corrections.jsonl</code> (created on first save). Run it from that folder with <code>streamlit run app.py</code>.</p>
+  <pre class="mermaid">
+flowchart LR
+  I["Negative + positive<br/>text, property type"] --> C["Clean<br/>(same rules as dataset)"]
+  C --> K["Action classifier<br/>12 actions + score"]
+  K --> O["Action checklist +<br/>editable recommendation text"]
+  O --> L["Approve / save with edits<br/>logged to corrections.jsonl"]
+  </pre>
+  <ul>
+    <li>The surveyor ticks or unticks suggested actions; each action has a standard step line that fills the numbered recommendation text, which can be edited freely.</li>
+    <li>The top 5 actions show with their score and the threshold at which they are suggested; the other 7 sit in a collapsed list.</li>
+    <li>A "similar past cases" panel was built first and then removed: the top match was often off-topic, which made the suggestion look less trustworthy. Stage 2 search remains in the scripts if it is wanted later.</li>
+    <li>Every accept or edit is logged with the input, the suggestion and the final text. These rows are the retraining set for stage 5 of the roadmap.</li>
+  </ul>
+  <p class="muted" style="font-size:13px">Checked so far: the app was run in a browser, typed input returned actions and similar cases, and "Accept as is" wrote a row to the log. Two bugs found that way were fixed (a greyed-out button right after typing, and tick marks carried over between queries). It has not been tried by surveyors. First start takes about 20 seconds while the search index builds. The classifier was trained on the training split only; the search covers all labelled rows, including test rows, so do not score the app against the test set.</p>
+</section>
+
+<section>
+  <h2>Deployment package</h2>
+  <p>Folder: <code>D:\INSPECTION DATASET\_deploy\repair_recommendation_app</code>. It runs on its own: no training data and no scripts folder, only the trained model and the app.</p>
+  <div class="scroll"><table>
+    <tr><th>Area</th><th>What was done</th></tr>
+    <tr><td>Packaging</td><td>Self-contained folder; pinned <code>requirements.txt</code>; <code>Dockerfile</code> (non-root user, health check) and <code>docker-compose.yml</code> with a persistent volume</td></tr>
+    <tr><td>Access</td><td>Shared password through <code>APP_PASSWORD</code>; wrong attempts are delayed. Individual accounts would need a company login proxy</td></tr>
+    <tr><td>Correction log</td><td>SQLite database (safe for several users saving at once) with timestamp, optional surveyor name and model version; <code>export_corrections.py</code> writes it to CSV for retraining</td></tr>
+    <tr><td>Privacy</td><td>Phone numbers, e-mail addresses and links are masked before anything is stored; the page tells users not to type names or addresses; input length is capped at 2,000 characters</td></tr>
+    <tr><td>Streamlit Cloud</td><td>Folder is a ready GitHub repo root. The app refuses to open on Streamlit Cloud without <code>APP_PASSWORD</code> (read from secrets); an Administrator panel downloads the log as CSV, needed because Cloud storage is erased on restart</td></tr>
+    <tr><td>Model privacy</td><td>The first saved model contained a word list with personal and business names taken from reports. It was rebuilt with only plain English words found in at least 25 training areas (1,203 terms, 395 single words). Test macro F1 0.544 against 0.546. Sample inputs on the page are written examples, not real reports</td></tr>
+    <tr><td>Guide</td><td><code>README.md</code>: Streamlit Cloud steps, Docker, settings, backup, model updates, security notes</td></tr>
+  </table></div>
+  <div class="label" style="margin-top:12px">Tested</div>
+  <ul>
+    <li>Input cleaning gives identical output to the training pipeline on all 2,439 test texts checked (0 differences).</li>
+    <li>Sign-in rejects a wrong password and accepts the right one; a saved correction had its phone number and e-mail masked; the export wrote the row.</li>
+    <li>The pinned requirements install into a fresh Python environment and the app runs there; the real server starts and passes its health check.</li>
+    <li>On a simulated public host the app refuses to open without a password; the password also works when read from secrets; the Administrator panel rejects a wrong password and shows the saved count with the right one.</li>
+  </ul>
+  <div class="label" style="margin-top:12px">Not tested</div>
+  <ul>
+    <li>The Docker image was not built, because Docker Desktop was not running on this PC.</li>
+    <li>No HTTPS, individual accounts or load testing. The quality checks (100-row label sample, 200-row test sample) are still open.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Can the classifier be improved?</h2>
+  <p>Tested on validation, test scored once per setting. Scripts: <code>s10_improve_classifier.py</code>, <code>s11_improve_text.py</code>.</p>
+  <div class="scroll"><table>
+    <tr><th>Attempt</th><th>Test macro F1</th><th>Verdict</th></tr>
+    <tr><td>Current app model (text only)</td><td>0.544</td><td>reference</td></tr>
+    <tr><td>+ property type and checklist type</td><td>0.542</td><td>no gain</td></tr>
+    <tr><td>+ all 404 checklist answers from the JSON</td><td>0.536</td><td>no gain (checklist alone: 0.44)</td></tr>
+    <tr><td>Different regularisation, no class balancing</td><td>0.526 to 0.542</td><td>no gain</td></tr>
+    <tr><td>Negative and positive text as separate inputs</td><td>0.518 to 0.547</td><td>no gain</td></tr>
+    <tr><td>Train on train + validation, thresholds by cross-validation</td><td>0.550</td><td>+0.006, within noise</td></tr>
+  </table></div>
+  <p style="margin-top:10px"><b>Why it is stuck.</b> Where two different reports have exactly the same negative and positive text, their repair actions agree only partly: mean overlap (F1) 0.47, and the identical set of actions in 15% of pairs. Chemical coating, sealant and fillet agree in under 10% of such pairs. The labels, which come from what inspectors wrote, are inconsistent, so a model cannot score much higher against them. Tuning the model will not fix that.</p>
+  <p><b>What would help.</b> Cleaner targets: a surveyor-agreed list of actions, a hand-labelled set of a few hundred areas, and the approvals and edits collected by the app (those are surveyor-confirmed). Retrain on those when there are enough.</p>
+</section>
+
+<section>
+  <h2>Stages 2 to 6</h2>
+  <div class="scroll"><table>
+    <tr><th>Stage</th><th>Method</th><th>Score</th><th>Move on when</th></tr>
+    <tr><td>2 Keyword search</td><td>TF-IDF or BM25, cosine similarity on negative + positive text</td><td>Top-5 hit rate on test</td><td>Baseline measured</td></tr>
+    <tr><td>3 Semantic search</td><td>Sentence embeddings, FAISS, cross-encoder rerank of top 20</td><td>Top-5 hit rate</td><td>Beats stage 2</td></tr>
+    <tr><td>4 Action classifier</td><td>Multi-label logistic regression on embeddings; tags fill templates</td><td>F1 per action</td><td>Each action has enough examples</td></tr>
+    <tr><td>5 Generation</td><td>Retrieved cases given to an LLM that writes the steps</td><td>Expert rating, ROUGE / BERTScore</td><td>Experts rate it above stage 3</td></tr>
+    <tr><td>6 Streamlit app</td><td>Two text boxes, steps and similar cases beside them, accept / edit log</td><td>Share accepted without edits</td><td>Live</td></tr>
+  </table></div>
+  <p class="muted" style="margin-top:10px;font-size:13px">All stages are scored on the same frozen test set. Test labels are good / wrong / unclear, checked by hand on 200 rows.</p>
+</section>
+
+<section>
+  <h2>Rules and open decisions</h2>
+  <ul>
+    <li>Source folders (<code>inspection_*</code>, <code>set*_*</code>) are never changed; every output goes in <code>_built/</code>.</li>
+    <li>Report text is data, not instructions. Names, phones, emails and addresses stay out of outputs.</li>
+    <li>Open: numbered steps or free text as output? Who hand-checks the test set? What acceptance rate is required? Is all report text English?</li>
+  </ul>
+</section>
+</main>
