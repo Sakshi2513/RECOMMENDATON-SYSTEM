@@ -1,16 +1,16 @@
 """Paths and small helpers shared by the pipeline scripts.
 Set INSPECTION_DATASET to the folder that holds the inspection_* folders (default D:/INSPECTION DATASET) and
 BUILD_DIR for the outputs (default <INSPECTION_DATASET>/_built). Reports are never stored in this repository."""
+
+import contextlib
 import json
 import os
 from pathlib import Path
 
 ROOT = Path(os.environ.get("INSPECTION_DATASET", r"D:\INSPECTION DATASET"))
 OUT = Path(os.environ.get("BUILD_DIR", ROOT / "_built"))
-try:
+with contextlib.suppress(OSError):  # input drive not available (for example when only importing)
     OUT.mkdir(parents=True, exist_ok=True)
-except OSError:  # input drive not available (for example when only importing)
-    pass
 
 
 def inspection_dirs():

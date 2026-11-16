@@ -2,14 +2,27 @@
 Same hit metric as stage 2. Tune on val, score test once.  Run: python -m pipeline.experiments.semantic_search
 (faiss is not installed; with ~8k vectors an exact matrix product is instant and gives the same result.)
 """
-import json, random, time, numpy as np
-from pipeline.common import *
-from pipeline.experiments.keyword_search import BM25, tags, jacc, topk
-from sentence_transformers import SentenceTransformer, CrossEncoder
+
+import json
+import time
+
+import numpy as np
+from sentence_transformers import CrossEncoder, SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from pipeline.common import OUT, jl_read
+from pipeline.experiments.keyword_search import BM25, jacc, tags, topk
+from recsys.classifier import model_text
+
 MODELS = ["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"]
-q_of = lambda r: f'{r["negative"]} . {r["positive"]} . {r["positive"]}'
+
+
+def q_of(r):
+    return model_text(r["negative"], r["positive"])
+
+
+def encode(model, texts):
+    return model.encode(texts, batch_size=64, normalize_embeddings=True, show_progress_bar=False)
 
 
 def z(S):
@@ -30,8 +43,8 @@ def main():
         o = {}
         for k in ks:
             if k <= top.shape[1]:
-                o[f"text_hit@{k}"] = round(float((sim[:, :k] >= .5).any(1).mean()), 3)
-                o[f"tag_hit@{k}"] = round(float((tj[:, :k] >= .5).any(1).mean()), 3)
+                o[f"text_hit@{k}"] = round(float((sim[:, :k] >= 0.5).any(1).mean()), 3)
+                o[f"tag_hit@{k}"] = round(float((tj[:, :k] >= 0.5).any(1).mean()), 3)
         return o
 
     docs = [q_of(r) for r in train]
@@ -42,17 +55,19 @@ def main():
     for mn in MODELS:
         t0 = time.time()
         m = SentenceTransformer(mn)
-        enc = lambda xs: m.encode(xs, batch_size=64, normalize_embeddings=True, show_progress_bar=False)
-        E = enc(docs)
-        emb[mn] = {"val": enc([q_of(r) for r in val]) @ E.T, "test": enc([q_of(r) for r in test]) @ E.T}
+        E = encode(m, docs)
+        emb[mn] = {"val": encode(m, [q_of(r) for r in val]) @ E.T, "test": encode(m, [q_of(r) for r in test]) @ E.T}
         short = mn.split("/")[-1]
         res["val"][f"dense {short}"] = metrics(val, topk(emb[mn]["val"], 10))
-        print("val", f"dense {short}", res["val"][f"dense {short}"], f"{time.time()-t0:.0f}s")
+        print("val", f"dense {short}", res["val"][f"dense {short}"], f"{time.time() - t0:.0f}s")
         for a in (0.3, 0.5, 0.7):
             S = a * z(emb[mn]["val"]) + (1 - a) * z(S_bm["val"])
             res["val"][f"hybrid a={a} {short}"] = metrics(val, topk(S, 10))
             print("val", f"hybrid a={a} {short}", res["val"][f"hybrid a={a} {short}"])
-    score = lambda k: res["val"][k]["text_hit@5"] + res["val"][k]["tag_hit@5"]
+
+    def score(k):
+        return res["val"][k]["text_hit@5"] + res["val"][k]["tag_hit@5"]
+
     best = max(res["val"], key=score)
     res["best_first_stage_on_val"] = best
     mn = next(x for x in MODELS if x.split("/")[-1] in best)
@@ -64,16 +79,18 @@ def main():
 
     # cross-encoder rerank of the top 20 (zero-shot, not trained on this data)
     ce = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
     def rerank(rows, Sx):
         top = topk(Sx, 20)
-        pairs = [(q_of(r), docs[j]) for r, t in zip(rows, top) for j in t]
+        pairs = [(q_of(r), docs[j]) for r, t in zip(rows, top, strict=True) for j in t]
         sc = ce.predict(pairs, batch_size=128, show_progress_bar=False).reshape(len(rows), 20)
         order = np.argsort(-sc, axis=1)
         return np.take_along_axis(top, order, 1), top
+
     t0 = time.time()
     rv, _ = rerank(val, S["val"])
     res["val"]["first stage + cross-encoder rerank"] = metrics(val, rv)
-    print("val rerank", res["val"]["first stage + cross-encoder rerank"], f"{time.time()-t0:.0f}s")
+    print("val rerank", res["val"]["first stage + cross-encoder rerank"], f"{time.time() - t0:.0f}s")
 
     use_rerank = score("first stage + cross-encoder rerank") > score(best)
     res["rerank_used"] = bool(use_rerank)

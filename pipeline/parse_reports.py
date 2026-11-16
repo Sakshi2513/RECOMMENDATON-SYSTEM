@@ -2,8 +2,13 @@
 Output: _built/areas_raw.jsonl, _built/manifest.csv, _built/parse_report.json
 Run: python -m pipeline.parse_reports
 """
-import csv, json, re, collections
-from pipeline.common import *
+
+import collections
+import csv
+import json
+import re
+
+from pipeline.common import OUT, inspection_dirs, jl_write
 
 MARK = re.compile(r"(?i)\b(need\s+to\s+do|solution\s*[:\-])")
 AREA = re.compile(r"(?m)^Impacted Area (\d+)\s*$")
@@ -24,13 +29,14 @@ def lines_until_end(block):
     return " ".join(x for x in out if x)
 
 
-def section(chunk, start, ends):
+def section(chunk, start, stop=None):
+    """Text after the `start` heading, cut at the `stop` heading (if given) and at the photo list."""
     m = re.search(start, chunk)
     if not m:
         return None
-    rest = chunk[m.end():]
-    if start.startswith("Negative"):
-        rest = rest.split("Positive side Description")[0]
+    rest = chunk[m.end() :]
+    if stop:
+        rest = rest.split(stop)[0]
     return lines_until_end(rest)
 
 
@@ -38,10 +44,10 @@ def parse_raw(text):
     ms = list(AREA.finditer(text))
     areas = {}
     for i, m in enumerate(ms):
-        chunk = text[m.end(): ms[i + 1].start() if i + 1 < len(ms) else len(text)]
+        chunk = text[m.end() : ms[i + 1].start() if i + 1 < len(ms) else len(text)]
         n = int(m.group(1))
-        neg = section(chunk, r"Negative side Description\s*\n", [])
-        pos = section(chunk, r"Positive side Description\s*\n", [])
+        neg = section(chunk, r"Negative side Description\s*\n", stop="Positive side Description")
+        pos = section(chunk, r"Positive side Description\s*\n")
         areas[n] = (neg or "", pos or "")
     return areas
 
@@ -51,15 +57,19 @@ def split_action(pos):
     m = MARK.search(pos)
     if not m:
         return pos.strip(), []
-    obs, act = pos[: m.start()].strip(), pos[m.start():]
-    steps = [re.sub(r"(?i)^(need\s+to\s+do|solution\s*[:\-])\s*", "", s).strip(" ,;.")
-             for s in re.split(r"(?i)(?=\bneed\s+to\s+do\b)", act)]
+    obs, act = pos[: m.start()].strip(), pos[m.start() :]
+    steps = [
+        re.sub(r"(?i)^(need\s+to\s+do|solution\s*[:\-])\s*", "", s).strip(" ,;.")
+        for s in re.split(r"(?i)(?=\bneed\s+to\s+do\b)", act)
+    ]
     steps = [s for s in steps if s]
     return obs, steps
 
 
 FOOT = re.compile(r"(?i)private\s*&\s*confidential\s*\d*\s*/?\s*\d*|page\s+\d+\s+of\s+\d+")
-LEAD = re.compile(r"(?i)^\s*(need\s+to\s+do|solution\s*[:\-]?|treatment\s*[:\-]?|recommendations?\s*[:\-]?|note\s*:)\s*")
+LEAD = re.compile(
+    r"(?i)^\s*(need\s+to\s+do|solution\s*[:\-]?|treatment\s*[:\-]?|recommendations?\s*[:\-]?|note\s*:)\s*"
+)
 
 
 def cut_after_label(raw, label):
@@ -159,14 +169,21 @@ def main():
                 steps = to_steps(jtxt)
                 stats["rec_from_json_fallback"] += 1
             stats["areas"] += 1
-            rows.append({
-                "id": f"{j['inspection_id']}_a{n:02d}", "inspection_id": j["inspection_id"],
-                "inspection_date": j.get("inspection_date"), "source_pdf_sha256": h,
-                "extraction_status": None,
-                "negative_raw": neg, "positive_raw": pos_obs, "rec_steps_raw": steps,
-                "negative_json": jneg, "positive_json": jpos,
-                "checklist_type": j.get("checklist_type"), "property_type": j.get("property_type"),
-            })
+            rows.append(
+                {
+                    "id": f"{j['inspection_id']}_a{n:02d}",
+                    "inspection_id": j["inspection_id"],
+                    "inspection_date": j.get("inspection_date"),
+                    "source_pdf_sha256": h,
+                    "negative_raw": neg,
+                    "positive_raw": pos_obs,
+                    "rec_steps_raw": steps,
+                    "negative_json": jneg,
+                    "positive_json": jpos,
+                    "checklist_type": j.get("checklist_type"),
+                    "property_type": j.get("property_type"),
+                }
+            )
     jl_write(OUT / "areas_raw.jsonl", rows)
     with open(OUT / "manifest.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

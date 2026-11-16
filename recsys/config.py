@@ -1,4 +1,5 @@
 """Paths and settings. Settings come from environment variables, or from Streamlit secrets on Streamlit Cloud."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -22,6 +23,7 @@ def setting(name: str) -> str:
         return os.environ[name]
     try:
         import streamlit as st
+
         return str(st.secrets[name])
     except Exception:
         return ""

@@ -1,5 +1,6 @@
 """Text cleaning. The same function cleans the training data and the text typed into the app,
 so the model always sees text in the same form."""
+
 import re
 
 BOILERPLATE = [r"during the inspection,? the following observations were noted:?", r"private\s*&\s*confidential"]

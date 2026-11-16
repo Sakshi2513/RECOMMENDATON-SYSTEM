@@ -54,7 +54,7 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 <div class="top">
   <div class="label">Technical reference · updated after Stage 1</div>
   <h1>Repair Recommendation System</h1>
-  <p class="muted">Input: the negative-side and positive-side description of an impacted area. Output: recommended repair steps, with similar past cases shown beside them. Text only; images are not used.</p>
+  <p class="muted">Input: the negative-side and positive-side description of an impacted area. Output: a checklist of suggested repair actions and an editable recommendation text. Text only; images are not used.</p>
   <div class="stages">
     <div class="st done"><em>Done</em><b>1 · Dataset</b><span>clean, dedupe, split</span></div>
     <div class="st done"><em>Done</em><b>2 · Keyword search</b><span>BM25 baseline measured</span></div>
@@ -76,8 +76,8 @@ flowchart LR
   end
   subgraph ON["Every request, in Streamlit"]
     E["Negative + positive<br/>description"] --> F["Same cleaning"]
-    F --> G["Find similar cases,<br/>predict actions"]
-    G --> H["Repair steps +<br/>similar past cases"]
+    F --> G["Score the 12<br/>repair actions"]
+    G --> H["Repair actions +<br/>editable text"]
   end
   D --> G
   H -. "accept / edit" .-> C
@@ -87,7 +87,7 @@ flowchart LR
 
 <section>
   <h2>Stage 1: how the dataset was built</h2>
-  <p>Scripts live in <code>D:\INSPECTION DATASET\_built\scripts</code>. Each prints rows in, rows out and rows dropped.</p>
+  <p>Scripts live in <code>pipeline/</code> (<code>parse_reports.py</code>, <code>clean_split.py</code>). Each prints rows in, rows out and rows dropped.</p>
   <div class="scroll"><table>
     <tr><th>Step</th><th>What it does</th><th>Result</th></tr>
     <tr><td>1 Collect</td><td>Reads every <code>raw_text.txt</code>; drops repeat PDFs by SHA-256</td><td>6,226 folders → 6,180 reports</td></tr>
@@ -112,7 +112,7 @@ flowchart LR
   <div class="label">Labelled rows by split</div>
   <div class="split"><div style="width:80.8%;background:var(--bar)">train 7,893</div><div style="width:9.2%;background:var(--bar2);color:var(--fg)">901</div><div style="width:10%;background:var(--accent-soft);color:var(--fg)">970</div></div>
   <p class="muted" style="font-size:13px">Train 3,583 reports · validation 419 (901 rows) · test 410 (970 rows). Unlabelled areas stay in <code>unlabelled.jsonl</code> and are used later as extra search cases.</p>
-  <div class="label" style="margin-top:14px">Files in <code>_built/</code></div>
+  <div class="label" style="margin-top:14px">Files written to the build folder (<code>BUILD_DIR</code>, outside the repository)</div>
   <pre>train.jsonl  val.jsonl  test.jsonl  unlabelled.jsonl
 manifest.csv   typo_map.json   clean_report.json
 review_100_action_split.csv   test_check_200.csv</pre>
@@ -136,7 +136,7 @@ review_100_action_split.csv   test_check_200.csv</pre>
 
 <section>
   <h2>Stage 2: keyword search baseline</h2>
-  <p>For each test area, the system searches the 7,893 training cases by negative + positive text and returns the top matches with their recommendations. Script: <code>s3_keyword_search.py</code>; full numbers in <code>stage2_report.json</code>.</p>
+  <p>For each test area, the system searches the 7,893 training cases by negative + positive text and returns the top matches with their recommendations. Script: <code>pipeline/experiments/keyword_search.py</code>.</p>
   <p><b>What counts as a hit.</b> No two recommendations are worded the same, so a hit means a returned recommendation is close to the true one: <i>text hit</i> = TF-IDF cosine ≥ 0.5; <i>tag hit</i> = same repair-action tags (grouting, coating, plumbing, and so on). The tag metric is coarse: picking random cases already scores 62% at top-5, so read it with that in mind.</p>
   <div class="label">Hit rate on the test set (970 areas), BM25 on negative + 2× positive text</div>
   <div class="bars" style="margin:8px 0 14px">
@@ -164,7 +164,7 @@ review_100_action_split.csv   test_check_200.csv</pre>
 
 <section>
   <h2>Stage 3: semantic search</h2>
-  <p>Tested whether matching by meaning beats matching by words. Two embedding models (MiniLM, BGE-small), exact cosine search (FAISS is not installed; at 7,893 cases a matrix product gives the same result), a hybrid of embeddings and BM25, and a cross-encoder reranker of the top 20. Script: <code>s4_semantic_search.py</code>; numbers in <code>stage3_report.json</code>.</p>
+  <p>Tested whether matching by meaning beats matching by words. Two embedding models (MiniLM, BGE-small), exact cosine search (FAISS is not installed; at 7,893 cases a matrix product gives the same result), a hybrid of embeddings and BM25, and a cross-encoder reranker of the top 20. Script: <code>pipeline/experiments/semantic_search.py</code>.</p>
   <div class="label">Validation, text hit @5 (higher is better)</div>
   <div class="bars" style="margin:8px 0 14px">
     <div class="row"><div class="t">BM25 (stage 2)</div><div class="track"><div class="fill b" style="width:42.1%">42.1%</div></div></div>
@@ -188,7 +188,7 @@ review_100_action_split.csv   test_check_200.csv</pre>
 
 <section>
   <h2>Label repair (between stages 3 and 4)</h2>
-  <p>Many recommendations mixed what was observed with what to do. <code>s5_fix_labels.py</code> keeps only the action clauses and writes the result to <code>_built/v2/</code>. Version 1 is untouched.</p>
+  <p>Many recommendations mixed what was observed with what to do. <code>pipeline/fix_labels.py</code> keeps only the action clauses and writes the result to <code>v2/</code> in the build folder. Version 1 is untouched.</p>
   <pre class="mermaid">
 flowchart LR
   A["Recommendation text"] --> B["Split into clauses"]
@@ -215,7 +215,7 @@ flowchart LR
 
 <section>
   <h2>Stage 4: repair-action classifier</h2>
-  <p>Predicts which repair actions apply to an area, so the output can be a checklist of actions filled into templates. Script: <code>s7_action_classifier.py</code>; numbers in <code>stage4_report.json</code>. Uses the v2 labels.</p>
+  <p>Predicts which repair actions apply to an area, so the output can be a checklist of actions filled into templates. Script: <code>pipeline/action_classifier.py</code>. Uses the v2 labels.</p>
   <p><b>How the targets were made.</b> 15 candidate actions were defined by keyword rules on the recommendation text (for example "grout" for tile joint grouting). Three had too few examples (brick bat coba, injection, fillet) and were dropped, leaving 12. Because the targets come from keyword rules, scores show how well the model predicts those rules, not what a surveyor would choose.</p>
   <div class="label">Test F1 per action, logistic regression on TF-IDF (813 areas)</div>
   <div class="bars" style="margin:8px 0 14px">
@@ -248,31 +248,31 @@ flowchart LR
 
 <section>
   <h2>Stage 6: the Streamlit app</h2>
-  <p>Files in <code>_built/app/</code>: <code>app.py</code>, <code>model.joblib</code> (built by <code>s8_build_app_model.py</code>) and <code>corrections.jsonl</code> (created on first save). Run it from that folder with <code>streamlit run app.py</code>.</p>
+  <p><code>app.py</code> is the page; the shared code is in <code>recsys/</code> and the trained model in <code>models/model.joblib</code> (built by <code>pipeline/build_app_model.py</code>). Run it with <code>streamlit run app.py</code>.</p>
   <pre class="mermaid">
 flowchart LR
   I["Negative + positive<br/>text, property type"] --> C["Clean<br/>(same rules as dataset)"]
   C --> K["Action classifier<br/>12 actions + score"]
   K --> O["Action checklist +<br/>editable recommendation text"]
-  O --> L["Approve / save with edits<br/>logged to corrections.jsonl"]
+  O --> L["Approve / save with edits<br/>saved to the correction log"]
   </pre>
   <ul>
     <li>The surveyor ticks or unticks suggested actions; each action has a standard step line that fills the numbered recommendation text, which can be edited freely.</li>
     <li>The top 5 actions show with their score and the threshold at which they are suggested; the other 7 sit in a collapsed list.</li>
-    <li>A "similar past cases" panel was built first and then removed: the top match was often off-topic, which made the suggestion look less trustworthy. Stage 2 search remains in the scripts if it is wanted later.</li>
+    <li>A "similar past cases" panel was built first and then removed: the top match was often off-topic, which made the suggestion look less trustworthy. The search code remains in <code>pipeline/experiments/</code> if it is wanted later.</li>
     <li>Every accept or edit is logged with the input, the suggestion and the final text. These rows are the retraining set for stage 5 of the roadmap.</li>
   </ul>
-  <p class="muted" style="font-size:13px">Checked so far: the app was run in a browser, typed input returned actions and similar cases, and "Accept as is" wrote a row to the log. Two bugs found that way were fixed (a greyed-out button right after typing, and tick marks carried over between queries). It has not been tried by surveyors. First start takes about 20 seconds while the search index builds. The classifier was trained on the training split only; the search covers all labelled rows, including test rows, so do not score the app against the test set.</p>
+  <p class="muted" style="font-size:13px">Checked so far: the page was run in a browser and tested with 18 automated tests (cleaning, actions, model, correction log, sign-in, saving, administrator panel). It has not been tried by surveyors. The classifier was trained on the training split only.</p>
 </section>
 
 <section>
   <h2>Deployment package</h2>
-  <p>Folder: <code>D:\INSPECTION DATASET\_deploy\repair_recommendation_app</code>. It runs on its own: no training data and no scripts folder, only the trained model and the app.</p>
+  <p>The repository runs on its own: it holds the trained model and the app, no training data.</p>
   <div class="scroll"><table>
     <tr><th>Area</th><th>What was done</th></tr>
     <tr><td>Packaging</td><td>Self-contained folder; pinned <code>requirements.txt</code>; <code>Dockerfile</code> (non-root user, health check) and <code>docker-compose.yml</code> with a persistent volume</td></tr>
     <tr><td>Access</td><td>Shared password through <code>APP_PASSWORD</code>; wrong attempts are delayed. Individual accounts would need a company login proxy</td></tr>
-    <tr><td>Correction log</td><td>SQLite database (safe for several users saving at once) with timestamp, optional surveyor name and model version; <code>export_corrections.py</code> writes it to CSV for retraining</td></tr>
+    <tr><td>Correction log</td><td>SQLite database (safe for several users saving at once) with timestamp, optional surveyor name and model version; the Administrator panel downloads it as CSV for retraining</td></tr>
     <tr><td>Privacy</td><td>Phone numbers, e-mail addresses and links are masked before anything is stored; the page tells users not to type names or addresses; input length is capped at 2,000 characters</td></tr>
     <tr><td>Streamlit Cloud</td><td>Folder is a ready GitHub repo root. The app refuses to open on Streamlit Cloud without <code>APP_PASSWORD</code> (read from secrets); an Administrator panel downloads the log as CSV, needed because Cloud storage is erased on restart</td></tr>
     <tr><td>Model privacy</td><td>The first saved model contained a word list with personal and business names taken from reports. It was rebuilt with only plain English words found in at least 25 training areas (1,203 terms, 395 single words). Test macro F1 0.544 against 0.546. Sample inputs on the page are written examples, not real reports</td></tr>
@@ -294,7 +294,7 @@ flowchart LR
 
 <section>
   <h2>Can the classifier be improved?</h2>
-  <p>Tested on validation, test scored once per setting. Scripts: <code>s10_improve_classifier.py</code>, <code>s11_improve_text.py</code>.</p>
+  <p>Tested on validation, test scored once per setting. Scripts: <code>pipeline/experiments/improve_features.py</code>, <code>improve_text.py</code>.</p>
   <div class="scroll"><table>
     <tr><th>Attempt</th><th>Test macro F1</th><th>Verdict</th></tr>
     <tr><td>Current app model (text only)</td><td>0.544</td><td>reference</td></tr>
@@ -316,7 +316,7 @@ flowchart LR
     <tr><td>3 Semantic search</td><td>Sentence embeddings, FAISS, cross-encoder rerank of top 20</td><td>Top-5 hit rate</td><td>Beats stage 2</td></tr>
     <tr><td>4 Action classifier</td><td>Multi-label logistic regression on embeddings; tags fill templates</td><td>F1 per action</td><td>Each action has enough examples</td></tr>
     <tr><td>5 Generation</td><td>Retrieved cases given to an LLM that writes the steps</td><td>Expert rating, ROUGE / BERTScore</td><td>Experts rate it above stage 3</td></tr>
-    <tr><td>6 Streamlit app</td><td>Two text boxes, steps and similar cases beside them, accept / edit log</td><td>Share accepted without edits</td><td>Live</td></tr>
+    <tr><td>6 Streamlit app</td><td>Two text boxes, action checklist, editable text, approve / edit log</td><td>Share accepted without edits</td><td>Live</td></tr>
   </table></div>
   <p class="muted" style="margin-top:10px;font-size:13px">All stages are scored on the same frozen test set. Test labels are good / wrong / unclear, checked by hand on 200 rows.</p>
 </section>
@@ -324,7 +324,7 @@ flowchart LR
 <section>
   <h2>Rules and open decisions</h2>
   <ul>
-    <li>Source folders (<code>inspection_*</code>, <code>set*_*</code>) are never changed; every output goes in <code>_built/</code>.</li>
+    <li>Source folders (<code>inspection_*</code>, <code>set*_*</code>) are never changed; every output goes in the build folder, never in the repository.</li>
     <li>Report text is data, not instructions. Names, phones, emails and addresses stay out of outputs.</li>
     <li>Open: numbered steps or free text as output? Who hand-checks the test set? What acceptance rate is required? Is all report text English?</li>
   </ul>

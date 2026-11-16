@@ -5,6 +5,7 @@ Settings (environment variables, or Streamlit secrets on Streamlit Cloud):
   ADMIN_PASSWORD   optional; enables the Administrator panel (download of the correction log)
   APP_DATA_DIR     folder for the correction database
 """
+
 import hmac
 import json
 import random
@@ -21,7 +22,8 @@ PASSWORD = config.setting("APP_PASSWORD")
 ADMIN_PASSWORD = config.setting("ADMIN_PASSWORD")
 
 st.set_page_config(page_title="Repair Recommendation", layout="centered", initial_sidebar_state="collapsed")
-st.markdown("""
+st.markdown(
+    """
 <style>
   .block-container {max-width: 980px; padding-top: 2.2rem;}
   #MainMenu, footer, header [data-testid="stToolbar"] {visibility: hidden;}
@@ -32,7 +34,9 @@ st.markdown("""
   div[data-testid="stTextArea"] textarea {font-size: 0.95rem;}
   div.stButton > button {border-radius: 6px; font-weight: 550;}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 def require_login():
@@ -103,16 +107,29 @@ def render_actions(model, result):
 def render_recommendation(model, result, chosen):
     st.markdown("### Recommendation")
     default = "\n".join(f"{i}. {STEP[a]}" for i, a in enumerate(chosen, 1))
-    final = st.text_area("Recommendation text (editable)", value=default, height=170, max_chars=config.MAX_CHARS,
-                         key=f"final_{result['id']}_{'_'.join(sorted(chosen))}", label_visibility="collapsed")
+    final = st.text_area(
+        "Recommendation text (editable)",
+        value=default,
+        height=170,
+        max_chars=config.MAX_CHARS,
+        key=f"final_{result['id']}_{'_'.join(sorted(chosen))}",
+        label_visibility="collapsed",
+    )
     surveyor = st.text_input("Surveyor name or initials (optional)", key="surveyor", max_chars=60)
     col_a, col_b, _ = st.columns([1.2, 1.6, 3])
     for col, label, status in ((col_a, "Approve", "accepted"), (col_b, "Save with edits", "edited")):
         if col.button(label, key=f"{status}_{result['id']}"):
             try:
-                get_log().add(surveyor=surveyor, negative=result["neg"], positive=result["pos"], actions=chosen,
-                              shown_text=default, final_text=default if status == "accepted" else final,
-                              status=status, model_version=model.version)
+                get_log().add(
+                    surveyor=surveyor,
+                    negative=result["neg"],
+                    positive=result["pos"],
+                    actions=chosen,
+                    shown_text=default,
+                    final_text=default if status == "accepted" else final,
+                    status=status,
+                    model_version=model.version,
+                )
                 st.success("Saved to the correction log.")
             except Exception:
                 st.error("Could not save. Please copy the text and tell the administrator.")
@@ -125,8 +142,10 @@ def render_admin():
             log = get_log()
             st.write(f"{log.count()} saved corrections.")
             if config.on_streamlit_cloud():
-                st.warning("On Streamlit Cloud this log is erased whenever the app restarts or is redeployed. "
-                           "Download it regularly.")
+                st.warning(
+                    "On Streamlit Cloud this log is erased whenever the app restarts or is redeployed. "
+                    "Download it regularly."
+                )
             st.download_button("Download corrections (CSV)", log.to_csv(), file_name="corrections.csv", mime="text/csv")
         elif password:
             st.error("Incorrect password.")
@@ -137,14 +156,27 @@ def main():
     model = get_model()
 
     st.title("Repair Recommendation")
-    st.markdown('<div class="sub">Enter the observations for an impacted area to get suggested repair actions. '
-                'Review and edit the suggestion before it is used.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub">Enter the observations for an impacted area to get suggested repair actions. '
+        "Review and edit the suggestion before it is used.</div>",
+        unsafe_allow_html=True,
+    )
 
     col1, col2 = st.columns(2, gap="large")
-    neg = col1.text_area("Negative side (where the damage shows)", key="neg", height=140, max_chars=config.MAX_CHARS,
-                         placeholder="e.g. Skirting level dampness in the master bedroom")
-    pos = col2.text_area("Positive side (suspected source)", key="pos", height=140, max_chars=config.MAX_CHARS,
-                         placeholder="e.g. Tile joints open and hollowness in the common bathroom, gaps around the nahani trap")
+    neg = col1.text_area(
+        "Negative side (where the damage shows)",
+        key="neg",
+        height=140,
+        max_chars=config.MAX_CHARS,
+        placeholder="e.g. Skirting level dampness in the master bedroom",
+    )
+    pos = col2.text_area(
+        "Positive side (suspected source)",
+        key="pos",
+        height=140,
+        max_chars=config.MAX_CHARS,
+        placeholder="e.g. Tile joints open and hollowness in the common bathroom, gaps around the nahani trap",
+    )
     st.caption("Do not enter customer names, phone numbers or addresses.")
 
     col_go, col_example, _ = st.columns([2, 1.4, 3])
@@ -155,16 +187,24 @@ def main():
         if not (neg.strip() or pos.strip()):
             st.warning("Enter at least one description.")
         else:
-            st.session_state["result"] = {"id": time.time_ns(), "neg": neg, "pos": pos, "scores": model.predict(neg, pos)}
+            st.session_state["result"] = {
+                "id": time.time_ns(),
+                "neg": neg,
+                "pos": pos,
+                "scores": model.predict(neg, pos),
+            }
 
     result = st.session_state.get("result")
     if result:
         chosen = render_actions(model, result)
         render_recommendation(model, result, chosen)
 
-    st.markdown('<div class="note">Suggestions come from a model trained on past inspection reports. '
-                'They are not a substitute for the surveyor\'s judgement. Approved and edited versions are logged '
-                '(phone numbers and e-mail addresses are removed) to improve the model.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="note">Suggestions come from a model trained on past inspection reports. '
+        "They are not a substitute for the surveyor's judgement. Approved and edited versions are logged "
+        "(phone numbers and e-mail addresses are removed) to improve the model.</div>",
+        unsafe_allow_html=True,
+    )
     if ADMIN_PASSWORD:
         render_admin()
 

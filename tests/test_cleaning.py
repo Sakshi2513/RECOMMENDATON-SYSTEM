@@ -18,7 +18,10 @@ def test_removes_contact_details():
 
 
 def test_fixes_typos_and_lowercases():
-    assert clean("Dampness in Celing of Bathoom", {"celing": "ceiling", "bathoom": "bathroom"}) == "dampness in ceiling of bathroom"
+    assert (
+        clean("Dampness in Celing of Bathoom", {"celing": "ceiling", "bathoom": "bathroom"})
+        == "dampness in ceiling of bathroom"
+    )
     assert clean("tile joints kitchn", TYPOS) == "tile joints kitchen"
 
 

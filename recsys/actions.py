@@ -1,6 +1,7 @@
 """The repair actions the model predicts, how they are recognised in recommendation text, and the
 standard sentence shown in the app for each. The keyword rules create the training labels; they are not
 surveyor decisions (see docs)."""
+
 import re
 
 # action -> regular expression that marks it in a recommendation text (used to build training labels)
@@ -25,11 +26,18 @@ ACTIONS = list(ACTION_RULES)
 _COMPILED = {name: re.compile(rule, re.I) for name, rule in ACTION_RULES.items()}
 
 LABEL = {
-    "tile_joint_grouting": "Tile joint grouting", "epoxy_grouting": "Epoxy grouting",
-    "chemical_coating": "Chemical coating", "plumbing_repair": "Plumbing repair",
-    "crack_filling": "Crack filling", "sealant": "Sealant application", "plaster_repair": "Plaster repair",
-    "painting": "Painting", "floor_breaking": "Floor breaking", "retiling": "Retiling",
-    "outlet_patch": "Outlet patching", "inspection_check": "Further inspection",
+    "tile_joint_grouting": "Tile joint grouting",
+    "epoxy_grouting": "Epoxy grouting",
+    "chemical_coating": "Chemical coating",
+    "plumbing_repair": "Plumbing repair",
+    "crack_filling": "Crack filling",
+    "sealant": "Sealant application",
+    "plaster_repair": "Plaster repair",
+    "painting": "Painting",
+    "floor_breaking": "Floor breaking",
+    "retiling": "Retiling",
+    "outlet_patch": "Outlet patching",
+    "inspection_check": "Further inspection",
 }
 
 STEP = {

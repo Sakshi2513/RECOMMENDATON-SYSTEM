@@ -1,4 +1,5 @@
 """Correction log: what the surveyor approved or edited. SQLite, so several users can save at once."""
+
 import csv
 import io
 import sqlite3
@@ -7,8 +8,18 @@ from pathlib import Path
 
 from .cleaning import mask_pii
 
-COLUMNS = ["id", "ts", "surveyor", "negative", "positive", "suggested_actions", "shown_text",
-           "final_text", "status", "model_version"]
+COLUMNS = [
+    "id",
+    "ts",
+    "surveyor",
+    "negative",
+    "positive",
+    "suggested_actions",
+    "shown_text",
+    "final_text",
+    "status",
+    "model_version",
+]
 
 
 class CorrectionLog:
@@ -25,10 +36,20 @@ class CorrectionLog:
     def add(self, *, surveyor, negative, positive, actions, shown_text, final_text, status, model_version):
         """Save one approval or edit. Phone numbers, e-mails and links are masked before storing."""
         self.con.execute(
-            "INSERT INTO corrections (ts, surveyor, negative, positive, suggested_actions, shown_text, final_text, status, model_version)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            (time.strftime("%Y-%m-%d %H:%M:%S"), mask_pii(surveyor)[:60], mask_pii(negative), mask_pii(positive),
-             ",".join(actions), mask_pii(shown_text), mask_pii(final_text), status, model_version))
+            "INSERT INTO corrections (ts, surveyor, negative, positive, suggested_actions, shown_text,"
+            " final_text, status, model_version) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                mask_pii(surveyor)[:60],
+                mask_pii(negative),
+                mask_pii(positive),
+                ",".join(actions),
+                mask_pii(shown_text),
+                mask_pii(final_text),
+                status,
+                model_version,
+            ),
+        )
         self.con.commit()
 
     def count(self) -> int:

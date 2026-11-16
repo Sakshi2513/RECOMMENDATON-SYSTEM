@@ -4,16 +4,31 @@ A retrieved case is a 'hit' for a query when its recommendation is close to the 
   tag hit  : the two recommendations share the same set of repair-action tags (Jaccard >= 0.5)
 Tune on val, score test once.  Run: python -m pipeline.experiments.keyword_search
 """
-import json, re, random, numpy as np
-from pipeline.common import *
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+
+import json
+import random
+import re
+
+import numpy as np
 import scipy.sparse as sp
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+
+from pipeline.common import OUT, jl_read
 
 TAGS = {
-    "grouting": r"grout", "chemical_coat": r"chemical|coating|coat\b|brush", "plumbing": r"plumb|pipe|nahani|nahin|trap|drain",
-    "brick_bat_coba": r"brick\s*bat|coba|bat coba", "epoxy": r"epoxy", "sealant": r"sealant|sealent|silicon|caulk|pu\b",
-    "patch": r"patch|plaster|crack|chipping", "waterproof": r"waterproof|membrane|app\b|sbs", "tile": r"tile|tiling|retil|flooring",
-    "injection": r"inject|pressure", "paint": r"paint|putty|primer", "skirting": r"skirting", "fillet": r"fillet|filet|watta",
+    "grouting": r"grout",
+    "chemical_coat": r"chemical|coating|coat\b|brush",
+    "plumbing": r"plumb|pipe|nahani|nahin|trap|drain",
+    "brick_bat_coba": r"brick\s*bat|coba|bat coba",
+    "epoxy": r"epoxy",
+    "sealant": r"sealant|sealent|silicon|caulk|pu\b",
+    "patch": r"patch|plaster|crack|chipping",
+    "waterproof": r"waterproof|membrane|app\b|sbs",
+    "tile": r"tile|tiling|retil|flooring",
+    "injection": r"inject|pressure",
+    "paint": r"paint|putty|primer",
+    "skirting": r"skirting",
+    "fillet": r"fillet|filet|watta",
     "inspection": r"further|inspect|check|monitor|observe",
 }
 TAGRX = {k: re.compile(v, re.I) for k, v in TAGS.items()}
@@ -84,22 +99,37 @@ def main():
     rtop = rng.integers(0, len(train), size=(len(val), 10))
     R_v = rec_vec.transform([r["recommendation"] for r in val])
     tg_v = [tags(r["recommendation"]) for r in val]
-    rb = {f"{m}_hit@5": round(float(np.mean([any((m == "text" and R_v[i].multiply(R_tr[j]).sum() >= .5) or
-                                                  (m == "tag" and jacc(tg_v[i], tags_tr[j]) >= .5) for j in rtop[i, :5])
-                                              for i in range(len(val))])), 3) for m in ("text", "tag")}
+    rb = {
+        f"{m}_hit@5": round(
+            float(
+                np.mean(
+                    [
+                        any(
+                            (m == "text" and R_v[i].multiply(R_tr[j]).sum() >= 0.5)
+                            or (m == "tag" and jacc(tg_v[i], tags_tr[j]) >= 0.5)
+                            for j in rtop[i, :5]
+                        )
+                        for i in range(len(val))
+                    ]
+                )
+            ),
+            3,
+        )
+        for m in ("text", "tag")
+    }
 
     variants = {
-        "neg+pos": lambda r: f'{r["negative"]} {r["positive"]}',
+        "neg+pos": lambda r: f"{r['negative']} {r['positive']}",
         "pos only": lambda r: r["positive"],
         "neg only": lambda r: r["negative"],
-        "neg+2xpos": lambda r: f'{r["negative"]} {r["positive"]} {r["positive"]}',
+        "neg+2xpos": lambda r: f"{r['negative']} {r['positive']} {r['positive']}",
     }
     res = {"random_val": rb, "val": {}}
     for name, fn in variants.items():
         for m in ("tfidf", "bm25"):
             res["val"][f"{m} | {name}"] = evaluate(val, fn, m)[0]
             print(f"val {m:5s} {name:10s}", res["val"][f"{m} | {name}"])
-    best = max(res["val"], key=lambda k: (res["val"][k]["tag_hit@5"] + res["val"][k]["text_hit@5"]))
+    best = max(res["val"], key=lambda k: res["val"][k]["tag_hit@5"] + res["val"][k]["text_hit@5"])
     m, name = [x.strip() for x in best.split("|")]
     res["best_on_val"] = best
     tres, top = evaluate(test, variants[name], m)
@@ -116,8 +146,14 @@ def main():
     random.seed(11)
     samples = []
     for i in random.sample(range(len(test)), 10):
-        samples.append({"negative": test[i]["negative"], "positive": test[i]["positive"], "true": test[i]["recommendation"][:200],
-                        "top1": train[top[i][0]]["recommendation"][:200]})
+        samples.append(
+            {
+                "negative": test[i]["negative"],
+                "positive": test[i]["positive"],
+                "true": test[i]["recommendation"][:200],
+                "top1": train[top[i][0]]["recommendation"][:200],
+            }
+        )
     res["samples"] = samples
     (OUT / "stage2_report.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
     print("BEST on val:", best)

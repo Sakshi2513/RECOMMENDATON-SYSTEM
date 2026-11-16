@@ -6,6 +6,7 @@ Outputs: models/model.joblib, models/typo_map.json, models/vocabulary_review.txt
 
 Run: python -m pipeline.build_app_model [--min-df 25] [--out-dir models]
 """
+
 import argparse
 import shutil
 from pathlib import Path
@@ -40,16 +41,23 @@ def main():
     vectorizer = TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, min_df=args.min_df, token_pattern=TOKEN_PATTERN)
     xtr = vectorizer.fit_transform([q_of(r) for r in tr])
     xva, xte = vectorizer.transform([q_of(r) for r in va]), vectorizer.transform([q_of(r) for r in te])
-    models = [LogisticRegression(C=4.0, max_iter=2000, class_weight="balanced").fit(xtr, ytr[:, j]) for j in range(len(keep))]
-    scores = lambda x: np.column_stack([m.predict_proba(x)[:, 1] for m in models])
-    thresholds = best_thresholds(yva, scores(xva))   # tuned on validation only
+    models = [
+        LogisticRegression(C=4.0, max_iter=2000, class_weight="balanced").fit(xtr, ytr[:, j]) for j in range(len(keep))
+    ]
+
+    def scores(x):
+        return np.column_stack([m.predict_proba(x)[:, 1] for m in models])
+
+    thresholds = best_thresholds(yva, scores(xva))  # tuned on validation only
     f1 = precision_recall_fscore_support(yte, scores(xte) >= thresholds, average=None, zero_division=0)[2]
     print(f"vocabulary {len(vectorizer.vocabulary_)} terms; test macro F1 {f1.mean():.3f}")
-    for name, value in zip(names_kept, f1):
+    for name, value in zip(names_kept, f1, strict=True):
         print(f"  {name:22s} {value:.2f}")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"tf": vectorizer, "models": models, "th": thresholds, "names": names_kept}, args.out_dir / "model.joblib")
+    joblib.dump(
+        {"tf": vectorizer, "models": models, "th": thresholds, "names": names_kept}, args.out_dir / "model.joblib"
+    )
     shutil.copy(OUT / "typo_map.json", args.out_dir / "typo_map.json")
     words = sorted(w for w in vectorizer.vocabulary_ if " " not in w)
     (args.out_dir / "vocabulary_review.txt").write_text(" ".join(words) + "\n", encoding="utf-8")

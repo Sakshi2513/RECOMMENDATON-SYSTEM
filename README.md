@@ -77,6 +77,8 @@ pipeline/                 rebuild the dataset and model from inspection reports 
   experiments/            keyword search, semantic search and tuning tests that shaped the design
 tests/                    18 tests (cleaning, actions, model, log, whole page)
 docs/                     technical reference with results and diagrams
+pyproject.toml            lint (ruff) and test settings
+requirements*.txt         pinned packages: app, development, and the optional semantic-search experiment
 ```
 
 ## Rebuild the model
@@ -86,21 +88,29 @@ The inspection reports are **not** in this repository (they hold customer data).
 ```bash
 pip install -r requirements-dev.txt
 export INSPECTION_DATASET="/path/to/inspection/folders"     # Windows: set INSPECTION_DATASET=...
+export BUILD_DIR="/path/for/outputs"                        # optional; default <INSPECTION_DATASET>/_built
 python -m pipeline.parse_reports
 python -m pipeline.clean_split
 python -m pipeline.fix_labels
 python -m pipeline.build_app_model          # writes models/model.joblib
 ```
 
+Run every command from the repository root. Intermediate files (datasets, review sheets) go to `BUILD_DIR`, never into the
+repository.
+
 Keep scikit-learn at the version in `requirements.txt`, or retrain with the new one: a saved model can fail to load on a
 different version.
 
-## Tests
+## Tests and code checks
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest
+python -m pytest          # 18 tests
+python -m ruff check .     # lint (settings in pyproject.toml)
+python -m ruff format --check .
 ```
+
+The same three commands run on every push (`.github/workflows/tests.yml`).
 
 ## Privacy
 

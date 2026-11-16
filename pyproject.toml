@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "B", "SIM", "UP", "C4"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["recsys", "pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
